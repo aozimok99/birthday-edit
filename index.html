@@ -11,7 +11,20 @@ const SUPABASE_PUBLISHABLE_KEY='sb_publishable_vYusuSyNDtuHznBhtgfpCA_SOmUS7FQ';
 const $=id=>document.getElementById(id);let pin='',products=[],active='All Gifts',working=false,searchTerm='',sortMode='featured';
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 async function rpc(name,args){const res=await fetch(SUPABASE_URL+'/rest/v1/rpc/'+name,{method:'POST',headers:{'Content-Type':'application/json','apikey':SUPABASE_PUBLISHABLE_KEY,'Authorization':'Bearer '+SUPABASE_PUBLISHABLE_KEY},body:JSON.stringify(args)});let body;try{body=await res.json()}catch{body=null}if(!res.ok)throw Error(body?.message||'Request failed ('+res.status+').');return body}
-async function refresh(){products=await rpc('list_birthday_gifts',{p_pin:pin});render()}
+// Catalog display overrides are maintained in GitHub. Supabase remains the source
+// of stable product IDs, authentication, and reservation status.
+// Add or edit entries by retailer URL fragment; do not store PINs or secrets here.
+const GIFT_CATALOG = [
+ {match:'aventino-029-008-049',price_cents:24500},
+ {match:'nicolette-knit-dress-black',price_cents:18800},
+ {match:'vertuo-pop-plus-matteblack-gold',price_cents:10999},
+ {match:'double-ball-earring-shashi',price_cents:6800},
+ {match:'cable-hooded-scarf-hat-attack',price_cents:10200},
+ {match:'standard-room-kit',price_cents:19000},
+ {match:'cyprus-mule-brown-leather',price_cents:26300,image_url:'https://larroude.com/cdn/shop/files/L545-CYPR-BROW-2926_4.webp?v=1781037568'}
+];
+function applyCatalog(row){const entry=GIFT_CATALOG.find(x=>row.product_url?.includes(x.match));return entry?{...row,...Object.fromEntries(Object.entries(entry).filter(([k])=>k!=='match'))}:row}
+async function refresh(){products=(await rpc('list_birthday_gifts',{p_pin:pin})).map(applyCatalog);render()}
 function render(){
  const cats=['All Gifts',...new Set(products.map(p=>p.category).filter(Boolean))];
  $('filters').innerHTML=cats.map(c=>`<button class="filter ${c===active?'active':''}" data-cat="${esc(c)}" aria-pressed="${c===active}">${esc(c)}</button>`).join('');
