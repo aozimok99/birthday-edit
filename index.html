@@ -14,6 +14,10 @@ async function rpc(name,args){const res=await fetch(SUPABASE_URL+'/rest/v1/rpc/'
 // Catalog display overrides are maintained in GitHub. Supabase remains the source
 // of stable product IDs, authentication, and reservation status.
 // Add or edit entries by retailer URL fragment; do not store PINs or secrets here.
+// Add new gifts here. Unique key stays stable so reservations survive edits.
+const NEW_GIFTS = [
+ // {key:'example-gift',name:'Example',brand:'Brand',category:'Accessories',product_url:'https://...',image_url:'https://...',price_cents:10000,currency:'USD',size_preference:'',color_preference:'',notes:''}
+];
 const GIFT_CATALOG = [
  {match:'aventino-029-008-049',price_cents:24500},
  {match:'nicolette-knit-dress-black',price_cents:18800},
@@ -24,7 +28,22 @@ const GIFT_CATALOG = [
  {match:'cyprus-mule-brown-leather',price_cents:26300,image_url:'https://larroude.com/cdn/shop/files/L545-CYPR-BROW-2926_4.webp?v=1781037568'}
 ];
 function applyCatalog(row){const entry=GIFT_CATALOG.find(x=>row.product_url?.includes(x.match));return entry?{...row,...Object.fromEntries(Object.entries(entry).filter(([k])=>k!=='match'))}:row}
-async function refresh(){products=(await rpc('list_birthday_gifts',{p_pin:pin})).map(applyCatalog);render()}
+async function refresh(){
+ const existing=(await rpc('list_birthday_gifts',{p_pin:pin})).map(applyCatalog);
+ let reservations=[];
+ if(NEW_GIFTS.length){
+   try{reservations=await rpc('list_github_gift_reservations',{p_pin:pin})}
+   catch(e){console.warn('GitHub gift reservations unavailable; run one-time Supabase setup.',e);throw Error('New gift reservations need the one-time database setup. '+e.message)}
+ }
+ const reserved=new Map(reservations.map(r=>[r.gift_key,r.reserved_by]));
+ const keys=new Set();
+ const additions=NEW_GIFTS.map(g=>{
+   if(!/^[a-z0-9][a-z0-9_-]{0,99}$/.test(g.key)||keys.has(g.key))throw Error('Invalid or duplicate GitHub gift key');
+   keys.add(g.key);
+   return {...g,id:'github:'+g.key,reserved_by:reserved.get(g.key)||null};
+ });
+ products=[...existing,...additions];render()
+}
 function render(){
  const cats=['All Gifts',...new Set(products.map(p=>p.category).filter(Boolean))];
  $('filters').innerHTML=cats.map(c=>`<button class="filter ${c===active?'active':''}" data-cat="${esc(c)}" aria-pressed="${c===active}">${esc(c)}</button>`).join('');
@@ -44,7 +63,7 @@ function render(){
 }
 $('search').addEventListener('input',e=>{searchTerm=e.target.value.toLowerCase().trim();render()});
 $('sort').addEventListener('change',e=>{sortMode=e.target.value;render()});
-async function reservation(id,action){if(working)return;const p=products.find(x=>x.id===id);if(!p)return;let person;if(action==='release'){person=p.reserved_by;if(!confirm('Release '+p.name+' reserved by '+person+'?'))return}else{person=prompt('Who is reserving '+p.name+'? Enter your name:','');if(person===null)return;person=person.trim();if(!person||person.length>60){alert('Please enter a name between 1 and 60 characters.');return}}working=true;$('grid').classList.add('busy');try{const result=await rpc(action==='reserve'?'reserve_birthday_gift':'release_birthday_gift',{p_pin:pin,p_product_id:id,p_person:person});if(!result)alert(action==='reserve'?'Someone already reserved this gift.':'The reservation could not be released.');await refresh()}catch(e){alert('Could not update reservation: '+e.message)}finally{working=false;$('grid').classList.remove('busy')}}
+async function reservation(id,action){if(working)return;const p=products.find(x=>x.id===id);if(!p)return;let person;if(action==='release'){person=p.reserved_by;if(!confirm('Release '+p.name+' reserved by '+person+'?'))return}else{person=prompt('Who is reserving '+p.name+'? Enter your name:','');if(person===null)return;person=person.trim();if(!person||person.length>60){alert('Please enter a name between 1 and 60 characters.');return}}working=true;$('grid').classList.add('busy');try{const result=id.startsWith('github:')?await rpc('github_gift_reservation',{p_pin:pin,p_gift_key:id.slice(7),p_person:person,p_action:action}):await rpc(action==='reserve'?'reserve_birthday_gift':'release_birthday_gift',{p_pin:pin,p_product_id:id,p_person:person});if(!result)alert(action==='reserve'?'Someone already reserved this gift.':'The reservation could not be released.');await refresh()}catch(e){alert('Could not update reservation: '+e.message)}finally{working=false;$('grid').classList.remove('busy')}}
 $('login').onsubmit=async e=>{e.preventDefault();pin=$('pin').value;$('login-error').textContent='';try{await refresh();$('gate').classList.add('hidden');$('store').classList.remove('hidden');$('signout').classList.remove('hidden');$('pin').value=''}catch(e){pin='';$('login-error').textContent='Unable to unlock the wishlist. Check your passphrase or database setup. '+e.message}};
 $('signout').onclick=()=>{pin='';products=[];$('store').classList.add('hidden');$('gate').classList.remove('hidden');$('signout').classList.add('hidden')};
 // Refresh reservations periodically while the tab is open; no database changes occur on refresh.
