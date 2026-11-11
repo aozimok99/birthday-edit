@@ -16,6 +16,7 @@ async function rpc(name,args){const res=await fetch(SUPABASE_URL+'/rest/v1/rpc/'
 // Add or edit entries by retailer URL fragment; do not store PINs or secrets here.
 // Add new gifts here. Unique key stays stable so reservations survive edits.
 const NEW_GIFTS = [
+ {key:'nou-driver-dalmatian-ponyhair',name:'The Driver',brand:'NOU',category:'Shoes',product_url:'https://shopnou.com/products/the-driver-dalmation-ponyhair?variant=55692836372802',image_url:'',price_cents:44500,currency:'USD',size_preference:'EU 37',color_preference:'Dalmatian Ponyhair',notes:'Black leather loafer with Dalmatian-print ponyhair vamp'},
  {key:'reformation-sofia-east-west-fawn',name:'Sofia East West Shoulder Bag',brand:'Reformation',category:'Accessories',product_url:'https://www.shopbop.com/sofia-east-west-shoulder-bag/vp/v=1/1552975013.htm?colorSin=2079306551',image_url:'https://m.media-amazon.com/images/G/01/Shopbop/p/prod/products/refor/refor4277929c58/refor4277929c58_1790781900692_2-0._QL90_UX564_.jpg',price_cents:39800,currency:'USD',size_preference:'One Size',color_preference:'Fawn Haircalf',notes:''},
  // {key:'example-gift',name:'Example',brand:'Brand',category:'Accessories',product_url:'https://...',image_url:'https://...',price_cents:10000,currency:'USD',size_preference:'',color_preference:'',notes:''}
 ];
