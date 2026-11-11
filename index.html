@@ -75,8 +75,55 @@ async function refresh(){
    keys.add(g.key);
    return {...g,id:'github:'+g.key,reserved_by:reserved.get(g.key)||null};
  });
- products=[...existing,...additions];render()
+ products=[...existing,...additions];render();hydrateGiftImages().catch(console.warn)
 }
+
+const imageCache=new Map();
+async function resolveGiftImage(g){
+ if(g.image_url)return g.image_url;
+ if(imageCache.has(g.key))return imageCache.get(g.key);
+ const u=new URL(g.product_url),parts=u.pathname.match(/\/products\/([^/?]+)/);
+ const candidates=[];
+ if(parts)candidates.push(u.origin+'/products/'+parts[1]+'.js');
+ // Product JSON is a public Shopify endpoint and returns real retailer photographs.
+ if(parts)candidates.push(u.origin+'/products/'+parts[1]+'.json');
+ for(const endpoint of candidates){
+  try{
+   const r=await fetch(endpoint,{mode:'cors'});
+   if(!r.ok)continue;
+   const data=await r.json(),p=data.product||data;
+   let imgs=p.images||[];
+   const img=imgs[0],src=typeof img==='string'?img:(img?.src||p.featured_image);
+   if(src&&/^https?:\/\//.test(src)){imageCache.set(g.key,src);return src}
+   if(src&&src.startsWith('//')){imageCache.set(g.key,'https:'+src);return 'https:'+src}
+  }catch(e){}
+ }
+ // For retailers without a public product JSON endpoint, use a CORS metadata proxy.
+ try{
+  const r=await fetch('https://api.allorigins.win/raw?url='+encodeURIComponent(g.product_url));
+  if(r.ok){
+   const doc=new DOMParser().parseFromString(await r.text(),'text/html');
+   const src=doc.querySelector('meta[property="og:image:secure_url"]')?.content||doc.querySelector('meta[property="og:image"]')?.content||doc.querySelector('meta[name="twitter:image"]')?.content;
+   if(src){const full=new URL(src,g.product_url).href;imageCache.set(g.key,full);return full}
+  }
+ }catch(e){}
+ return '';
+}
+async function hydrateGiftImages(){
+ const unresolved=products.filter(p=>p.key&&!p.image_url);
+ await Promise.all(unresolved.map(async p=>{
+  const src=await resolveGiftImage(p);
+  if(!src)return;
+  p.image_url=src;
+  const el=document.querySelector('[data-gift-key="'+p.key+'"] .photo');
+  if(el&&!el.querySelector('img')){
+   const img=document.createElement('img');img.src=src;img.alt=p.brand+' '+p.name;img.loading='lazy';
+   img.onerror=()=>{img.remove();el.classList.remove('has-photo')};
+   el.prepend(img);el.classList.add('has-photo');
+  }
+ }));
+}
+
 function render(){
  const cats=['All Gifts',...new Set(products.map(p=>p.category).filter(Boolean))];
  $('filters').innerHTML=cats.map(c=>`<button class="filter ${c===active?'active':''}" data-cat="${esc(c)}" aria-pressed="${c===active}">${esc(c)}</button>`).join('');
@@ -89,7 +136,7 @@ function render(){
  const detail=[p.color_preference,p.size_preference].filter(Boolean).join(' · ');
  const price=p.price_cents!=null?new Intl.NumberFormat('en-US',{style:'currency',currency:p.currency||'USD',minimumFractionDigits:0,maximumFractionDigits:2}).format(p.price_cents/100):'View price at retailer';
  const reserved=!!p.reserved_by;
- return `<article class="product"><div class="photo ${p.image_url?'has-photo':''}">${p.image_url?`<img src="${esc(p.image_url)}" alt="${esc(p.brand+' '+p.name)}" loading="lazy" onerror="this.style.display='none';this.parentElement.classList.remove('has-photo')">`:''}<div class="placeholder"><span class="fallback-brand">${esc(p.brand)}</span><span class="fallback-name">${esc(p.name)}</span><span class="fallback-rule"></span><span class="fallback-label">THE BIRTHDAY EDIT</span></div>${reserved?'<span class="photo-tag">RESERVED</span>':''}</div><div class="info"><div class="brand">${esc(p.brand)}</div><h3 class="name">${esc(p.name)}</h3><div class="detail">${esc(detail||p.notes||'See retailer for details')}</div><div class="price">${esc(price)}</div><div class="status ${reserved?'reserved':''}"><span class="dot"></span>${reserved?'Reserved by '+esc(p.reserved_by):'Available to reserve'}</div><div class="actions"><a class="btn shop" href="${esc(p.product_url)}" target="_blank" rel="noopener noreferrer">SHOP ITEM <span aria-hidden="true">↗</span></a><button class="btn secondary" data-id="${esc(p.id)}" data-action="${reserved?'release':'reserve'}">${reserved?'RELEASE':'RESERVE'}</button></div></div></article>`
+ return `<article class="product" data-gift-key="${esc(p.key||'')}"><div class="photo ${p.image_url?'has-photo':''}">${p.image_url?`<img src="${esc(p.image_url)}" alt="${esc(p.brand+' '+p.name)}" loading="lazy" onerror="this.style.display='none';this.parentElement.classList.remove('has-photo')">`:''}<div class="placeholder"><span class="fallback-brand">${esc(p.brand)}</span><span class="fallback-name">${esc(p.name)}</span><span class="fallback-rule"></span><span class="fallback-label">THE BIRTHDAY EDIT</span></div>${reserved?'<span class="photo-tag">RESERVED</span>':''}</div><div class="info"><div class="brand">${esc(p.brand)}</div><h3 class="name">${esc(p.name)}</h3><div class="detail">${esc(detail||p.notes||'See retailer for details')}</div><div class="price">${esc(price)}</div><div class="status ${reserved?'reserved':''}"><span class="dot"></span>${reserved?'Reserved by '+esc(p.reserved_by):'Available to reserve'}</div><div class="actions"><a class="btn shop" href="${esc(p.product_url)}" target="_blank" rel="noopener noreferrer">SHOP ITEM <span aria-hidden="true">↗</span></a><button class="btn secondary" data-id="${esc(p.id)}" data-action="${reserved?'release':'reserve'}">${reserved?'RELEASE':'RESERVE'}</button></div></div></article>`
  }).join(''):'<div class="empty">No pieces match your search.</div>';
  $('filters').querySelectorAll('[data-cat]').forEach(b=>b.onclick=()=>{active=b.dataset.cat;render()});
  $('grid').querySelectorAll('[data-id]').forEach(b=>b.onclick=()=>reservation(b.dataset.id,b.dataset.action));
